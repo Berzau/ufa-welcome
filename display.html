@@ -613,6 +613,8 @@ function applyData(d){
   $('offline').classList.remove('on');
   render();
   geoCheck();
+  // Ablauf starten, falls er beim Laden noch keine Inhalte hatte (z. B. direkt nach der Einrichtung)
+  try{ if(!current && state.order && state.order.length){ state.scene=0; showScene(); } }catch(e){}
 }
 // Haltestellen oder Wetterort haben sich geändert (z. B. erster Abruf der Standortdaten): sofort neu laden, nicht erst beim nächsten Takt
 var geoKey=null;
