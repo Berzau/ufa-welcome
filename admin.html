@@ -1067,7 +1067,7 @@ function saveSettings(){var s=D.settings=D.settings||{};s.welcomeTitle=$('s_titl
   s.rotation={};ROT.forEach(function(x){s.rotation[x[0]]=parseInt($('rot_'+x[0]).value,10)||15});s.menuUntilHour=parseInt($('s_menuUntil').value,10);s.nightFrom=parseInt($('s_nightFrom').value,10);s.nightTo=parseInt($('s_nightTo').value,10);s.nightScene=$('s_nightScene').value==='1';s.jumpToNew=$('s_jump').value==='1';s.perMonitor=$('s_permon').value==='1';s.textSize=$('s_text').value;s.keepAwake=$('s_awake').value==='1';(window.__focus='welcome',save('Einstellungen veröffentlicht'))}
 
 /* ---------- Kontrolle vor und nach dem Veröffentlichen ---------- */
-var SCN={welcome:'Willkommen',guests:'Gäste',notices:'Hinweise',transit:'Abfahrten',weather:'Wetter',menu:'Speiseplan',tv:'Heute im TV',media:'Showreel',wifi:'Gäste-WLAN',alert:'Störung',night:'Nachtmodus',flash:'Sofortmeldung'};
+var SCN={welcome:'Willkommen',guests:'Gäste',notices:'Hinweise',transit:'Abfahrten',weather:'Wetter',menu:'Speiseplan',rooms:'Flexbüros',tv:'Heute im TV',media:'Showreel',wifi:'Gäste-WLAN',alert:'Störung',night:'Nachtmodus',flash:'Sofortmeldung'};
 var VSC={guests:'guests',flash:'flash',notices:'notices',events:'notices',menu:'menu',weather:'weather',wifi:'wifi',tv:'tv',media:'media'};
 var MONN=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 var CK=null;

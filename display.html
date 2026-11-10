@@ -241,6 +241,27 @@ body.scene-wifi #qrmini,body.scene-welcome #qrmini{display:none}
 body.scene-media #top,body.scene-media #foot{opacity:0}
 #top,#foot{transition:opacity .8s}
 
+/* Raumbelegung (Flexbüros) */
+.roomlist{margin-top:30px;display:flex;flex-direction:column}
+.room{display:grid;grid-template-columns:400px 1fr 220px;align-items:center;border-top:1px solid var(--line);padding:22px 0;min-height:104px}
+.room:first-child{border-top:0;padding-top:0}
+.room .rn{font-family:var(--hd);font-weight:600;font-size:52px;letter-spacing:-.03em;line-height:1}
+.room .rb{display:flex;flex-direction:column;gap:6px;min-width:0}
+.room .bk{font-size:34px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.room .bk small{font-size:24px;color:var(--tx2);font-weight:400;margin-left:14px}
+.room .bk em{font-style:normal;font-size:19px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);margin-left:14px}
+.room .bk.past{opacity:.35}
+.room .bk.free{color:var(--tx3);font-weight:300}
+.room .rs{text-align:right;font-size:22px;letter-spacing:.12em;text-transform:uppercase;color:var(--tx3)}
+.room .rs.busy{color:#fff}
+.room .rs.busy:before{content:"";display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--red);margin-right:12px;vertical-align:1px}
+.roomstand{margin-top:22px;font-size:20px;color:var(--tx3)}
+body.portrait .room{grid-template-columns:1fr auto;row-gap:10px}
+body.portrait .room .rb{grid-column:1 / -1;grid-row:2}
+body.portrait .room .rn{font-size:46px}
+body.portrait .room .bk{font-size:31px}
+body:not(.portrait) #sc-rooms{padding-bottom:110px}
+body.big .room .bk{font-size:40px} body.big .room .rn{font-size:58px}
 /* 9 Heute im TV */
 .tvlist{margin-top:34px;display:flex;flex-direction:column}
 .tv{display:grid;grid-template-columns:200px 1fr 260px;align-items:center;border-top:1px solid var(--line);padding:26px 0}
@@ -423,6 +444,12 @@ body.night #night{opacity:0}
     </section>
 
     <section class="scene" id="sc-media"><div id="mediabox"></div><div id="mediacap"></div></section>
+
+    <section class="scene" id="sc-rooms">
+      <div class="label" id="roomslabel">Flexbüros heute</div>
+      <div class="roomlist" id="roomlist"></div>
+      <div class="roomstand" id="roomstand"></div>
+    </section>
 
     <section class="scene" id="sc-tv">
       <div class="label">Heute im TV · UFA-Produktionen</div>
@@ -623,6 +650,7 @@ function geoCheck(){
   var k=JSON.stringify([(d.stops||[]).map(function(s){ return [s.id,s.on!==false,(s.products||[]).join()]; }), l.lat, l.lon]);
   if(k===geoKey) return; var first=(geoKey===null); geoKey=k;
   setTimeout(function(){ try{ loadTransit(); loadWeather(); }catch(e){} }, first?600:50);
+  if(first) setTimeout(function(){ try{ loadRooms(); }catch(e){} }, 900);
 }
 var lastLocal='';
 function siteDefault(){ var d=JSON.parse(JSON.stringify(DEFAULT_DATA)); var sd=(typeof SITE_DEFAULTS!=='undefined')&&SITE_DEFAULTS[SITE.id]; if(sd){ Object.keys(sd).forEach(function(k){ if(k==='settings'){ Object.keys(sd.settings).forEach(function(j){ d.settings[j]=sd.settings[j]; }); } else d[k]=sd[k]; }); } return d; }
@@ -686,7 +714,7 @@ function render(){
   $('logoMain').src = LOGOS.ufa;
   $('site').textContent = s.footer || 'UFA · Schöneberger Ufer 69';
   $('logoNight').src = LOGOS.ufa;
-  applyText(); applyAwake(); renderWelcome(d); renderGuests(d); renderNotices(d); renderMenu(d); renderWeather(); renderTransit(); renderWifi(d); renderTV(d); renderAlert(d); renderDiag(); checkFlash(); renderTicker();
+  applyText(); applyAwake(); renderWelcome(d); renderGuests(d); renderNotices(d); renderMenu(d); renderWeather(); renderTransit(); renderWifi(d); renderTV(d); renderRooms(d); renderAlert(d); renderDiag(); checkFlash(); renderTicker();
   if(d.settings && d.settings.reloadToken && d.settings.reloadToken!==(window.__rt||d.settings.reloadToken)){ location.reload(); } window.__rt=d.settings?d.settings.reloadToken:'';
   buildOrder(d);
   if(current && state.order.length && !state.order.some(function(x){ return x.id===current; })){ clearTimeout(sceneTimer); state.scene=0; showScene(); }
@@ -931,6 +959,40 @@ function todaysTV(d){
     .sort(function(a,b){ return (a.time||'').localeCompare(b.time||''); })
     .map(function(x){ return {show:x, past: x.time && x.time < now}; });
 }
+/* ============ Raumbelegung ============ */
+// d.rooms = { updated: ISO-Zeit, list: [Raumnamen], names: true|false, title: 'Flexbüros heute', bookings: [{n:Name, r:Raum, s:Start-ISO, e:Ende-ISO, k:'flex'|'solo'}] }
+function roomsToday(d){
+  var R=state.rooms||(d&&d.rooms); if(!R || !R.bookings) return null;
+  var up=Date.parse(R.updated||''); if(!up || Date.now()-up>8*86400000) return null; // nie abgeglichen oder länger als eine Woche alt: Tafel aus
+  var t=ymd(new Date()), list=(R.list&&R.list.length)?R.list.slice():[];
+  var by={}; R.bookings.forEach(function(b){ var st=new Date(b.s), en=new Date(b.e); if(isNaN(st)||isNaN(en)) return; if(ymd(st)>t || ymd(en)<t) return; if(list.indexOf(b.r)<0) list.push(b.r); (by[b.r]=by[b.r]||[]).push({n:b.n,st:st,en:en,k:b.k}); });
+  return {rooms:list.map(function(r){ return {name:r, bk:(by[r]||[]).sort(function(a,b){ return a.st-b.st; })}; }), names:R.names!==false, updated:new Date(up), title:R.title||'Flexbüros heute'};
+}
+// Belegung liegt in einer eigenen Datei je Standort (rooms-<standort>.json), damit der Abgleich nie mit der Verwaltung kollidiert
+function loadRooms(){
+  if(SAMPLE || PREVIEW) return; var f='rooms-'+SITE.id+'.json';
+  var pr = PRIV ? (READ_TOKEN ? fetch(ghRawUrl(f)+'&t='+Date.now(), {headers:ghHeadersR(), cache:'no-store'}) : Promise.reject()) : fetch(f+'?t='+Date.now(), {cache:'no-store'});
+  pr.then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(function(j){ state.rooms=j; if(state.data){ renderRooms(state.data); buildOrder(state.data); } }).catch(function(){});
+}
+function renderRooms(d){
+  var el=$('roomlist'); if(!el) return; var T=roomsToday(d); el.innerHTML=''; if(!T){ $('roomstand').textContent=''; return; }
+  $('roomslabel').textContent=T.title;
+  var now=new Date(), t=ymd(now), hm=function(x){ return pad(x.getHours())+':'+pad(x.getMinutes()); };
+  T.rooms.forEach(function(r){
+    var busy=r.bk.some(function(b){ return b.st<=now && b.en>now; }), later=r.bk.some(function(b){ return b.st>now; });
+    var rows=r.bk.slice(0,3).map(function(b){
+      var from=ymd(b.st)<t?'':hm(b.st), to=ymd(b.en)>t?'':hm(b.en), tm=(from||to)?((from||'…')+' – '+(to||'…')):'ganztägig';
+      return '<div class="bk'+(b.en<=now?' past':'')+'">'+esc(T.names?(b.n||'Belegt'):'Belegt')+'<small class="num">'+tm+'</small>'+(b.k==='solo'?'<em>Einzelbüro</em>':'')+'</div>';
+    }).join('') || '<div class="bk free">Heute frei</div>';
+    if(r.bk.length>3) rows+='<div class="bk" style="font-size:24px;color:var(--tx3)">+ '+(r.bk.length-3)+' weitere</div>';
+    var e=document.createElement('div'); e.className='room';
+    e.innerHTML='<div class="rn"'+(String(r.name).length>8?' style="font-size:40px;letter-spacing:-.02em"':'')+'>'+esc(r.name)+'</div><div class="rb">'+rows+'</div><div class="rs'+(busy?' busy':'')+'">'+(busy?'belegt':(later?'später belegt':'frei'))+'</div>';
+    el.appendChild(e);
+  });
+  var u=T.updated, same=ymd(u)===t;
+  $('roomstand').textContent='Stand '+(same?'heute':WD_SHORT(u)+' '+u.getDate()+'.'+(u.getMonth()+1)+'.')+' '+hm(u)+' Uhr';
+}
+function WD_SHORT(x){ return ['So','Mo','Di','Mi','Do','Fr','Sa'][x.getDay()]; }
 function renderTV(d){
   var list=todaysTV(d), el=$('tvlist'); el.innerHTML='';
   list.slice(0,6).forEach(function(x){ var e=document.createElement('div'); e.className='tv'+(x.past?' past':''); e.innerHTML='<div class="tm num">'+esc(x.show.time||'')+'</div><div class="ti">'+esc(x.show.title)+(x.show.note?'<small>'+esc(x.show.note)+'</small>':'')+'</div><div class="ch">'+esc(x.show.channel||'')+'</div>'; el.appendChild(e); });
@@ -1112,6 +1174,7 @@ function buildOrder(d){
   add('weather', rot.weather||10);
   var h=new Date().getHours(), wd=new Date().getDay();
   add('menu', rot.menu||12, !!currentWeekMenu(d) && wd>=1 && wd<=5 && h<(s.menuUntilHour==null?15:s.menuUntilHour));
+  add('rooms', rot.rooms||12, (function(){ var T=roomsToday(d); return !!T && T.rooms.length>0 && wd>=1 && wd<=5; })());
   add('tv', rot.tv||10, todaysTV(d).length>0);
   add('media', rot.media||30, activeMedia(d).length>0);
   add('wifi', rot.wifi||10, wifiActive(d));
@@ -1223,7 +1286,8 @@ if(PREVIEW){ window.addEventListener('storage', function(e){ if(!e.key || e.key=
 if(LOCAL){ window.addEventListener('storage', function(e){ if(!e.key || e.key===CACHE_KEY) loadLocalData(); }); }
 setTimeout(function(){ loadTransit(); loadWeather(); }, 300);
 setInterval(loadTransit, REFRESH_TRANSIT*1000); setInterval(loadWeather, REFRESH_WX*1000);
-setInterval(function(){ if(state.data){ buildOrder(state.data); renderGuests(state.data); renderNotices(state.data); } }, 30000);
+setInterval(function(){ if(state.data){ buildOrder(state.data); renderGuests(state.data); renderNotices(state.data); renderRooms(state.data); } }, 30000);
+setTimeout(loadRooms, 2500); setInterval(loadRooms, 120000);
 state.scene = 0;
 setTimeout(showScene, 400);
 setInterval(function(){ var d=new Date(); if(d.getHours()===RELOAD_HOUR && d.getMinutes()===0) location.reload(); }, 60000);
