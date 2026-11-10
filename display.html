@@ -482,7 +482,7 @@ var CACHE_KEY='ufa_display_cache'+(SITE.id&&SITE.id!=='default'?'_'+SITE.id:'');
 // So steht nichts Persönliches (Gästenamen, WLAN) auf einer öffentlichen Adresse. Pages liefert nur den Code.
 var PRIV=!!(typeof CONFIG!=='undefined' && CONFIG.privateData && CONFIG.github && CONFIG.github.owner && CONFIG.github.repo);
 var GHC=PRIV?CONFIG.github:null;
-var READ_TOKEN=''; try{ READ_TOKEN=localStorage.getItem('ufa_read_token')||''; }catch(e){}
+var READ_TOKEN=''; try{ READ_TOKEN=localStorage.getItem('ufa_read_token')||localStorage.getItem('ufa_gh_token')||''; }catch(e){} // im Browser der Verwaltung reicht deren Token (Vorschau)
 (function(){ var m=location.search.match(/[?&]token=([A-Za-z0-9_]+)/); if(m){ READ_TOKEN=m[1]; try{ localStorage.setItem('ufa_read_token',READ_TOKEN); }catch(e){} try{ history.replaceState(null,'',location.pathname+location.search.replace(/([?&])token=[^&]*&?/,'$1').replace(/[?&]$/,'')+location.hash); }catch(e){} } })();
 function ghRawUrl(path){ return 'https://api.github.com/repos/'+GHC.owner+'/'+GHC.repo+'/contents/'+path+'?ref='+(GHC.branch||'main'); }
 function ghHeadersR(){ return {'Authorization':'Bearer '+READ_TOKEN,'Accept':'application/vnd.github.raw+json','X-GitHub-Api-Version':'2022-11-28'}; }
@@ -978,7 +978,7 @@ function loadTickerAlerts(){
 function transitRemarks(){
   var out={}, now=Date.now();
   Object.keys(state.transit).forEach(function(id){ var t=state.transit[id]; if(!t||now-t.ts>20*60000) return;
-    (t.deps||[]).forEach(function(x){ (x.remarks||[]).forEach(function(r){ if(r.type==='warning' && r.summary && r.summary.length<140){ out[r.summary]=1; } }); if(x.cancelled && x.line){ out['Ausfall: '+x.line.name+' nach '+(x.direction||'')]=1; } }); });
+    (t.deps||[]).forEach(function(x){ (x.remarks||[]).forEach(function(r){ if(r.type==='warning' && r.summary && r.summary.length<140 && r.summary.length>=12 && !/^(disruption|information|hinweis|störung)\b.{0,3}$/i.test(r.summary)){ out[r.summary]=1; } }); if(x.cancelled && x.line){ out['Ausfall: '+x.line.name+' nach '+(x.direction||'')]=1; } }); });
   var list=Object.keys(out).slice(0,3);
   if(!list.length && sampleMode.transit) list=['Beispiel: U2 – Verspätungen durch Signalstörung'];
   return list;
@@ -1121,7 +1121,7 @@ window.addEventListener('resize', fit); fit();
 /* ============ Gerätetest ============ */
 // ?test=1: Diagnose unten links – zeigt, ob die Seite nach einer Stunde noch lebt, ob Abrufe klappen, Fehler, Gerät.
 var lastErr='';
-window.addEventListener('error', function(e){ lastErr=(e&&e.message)||'Fehler'; });
+window.addEventListener('error', function(e){ lastErr=((e&&e.message)||'Fehler')+((e&&e.lineno)?' (Zeile '+e.lineno+')':((e&&e.message==='Script error.')?' (Geräte-Browser, unkritisch)':'')); });
 function renderTest(){
   if(!TESTMODE) return;
   var el=$('testbox'); if(!el){ el=document.createElement('div'); el.id='testbox'; el.style.cssText='position:absolute;left:var(--gut);top:190px;z-index:20;background:rgba(0,0,0,.72);border:1px solid rgba(255,255,255,.25);border-radius:14px;padding:18px 22px;font-size:22px;line-height:1.5;color:#fff;max-width:760px;font-family:var(--tf)'; $('stage').appendChild(el); }
@@ -1148,7 +1148,7 @@ setInterval(function(){ var maxSec=0; state.order.forEach(function(x){ if(x.sec<
   if(!PREVIEW && state.data && Date.now()-lastSceneAt > (maxSec||30)*1000+60000){ clearTimeout(sceneTimer); state.scene++; buildOrder(state.data); showScene(); } }, 30000);
 // 2) Häufen sich Skriptfehler, lädt die Seite sich einmal pro Stunde selbst neu (statt mit kaputtem Zustand weiterzulaufen).
 var errCount=0, lastReload=0;
-window.addEventListener('error', function(){ errCount++; if(errCount>=3 && Date.now()-lastReload>3600000){ lastReload=Date.now(); try{ sessionStorage.setItem('ufa_reloaded', String(Date.now())); }catch(e){} setTimeout(function(){ location.reload(); }, 5000); } });
+window.addEventListener('error', function(e){ if(e && e.message==='Script error.' && !e.filename) return; /* fremdes Skript des Geräte-Browsers, nicht unsere Seite */ errCount++; if(errCount>=3 && Date.now()-lastReload>3600000){ lastReload=Date.now(); try{ sessionStorage.setItem('ufa_reloaded', String(Date.now())); }catch(e){} setTimeout(function(){ location.reload(); }, 5000); } });
 setInterval(function(){ errCount=0; }, 600000);
 // 3) Nach langer Verbindungspause (über 3 Stunden ohne Inhalte) einmal komplett neu laden, sobald es wieder geht.
 setInterval(function(){ if(!PREVIEW && !LOCAL && !DEMO && state.dataTs && Date.now()-state.dataTs>3*3600000 && navigator.onLine!==false){ fetchJSON('data.json?t='+Date.now(),5000).then(function(){ location.reload(); }).catch(function(){}); } }, 600000);

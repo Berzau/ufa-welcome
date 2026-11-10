@@ -73,8 +73,8 @@ var SITE_DEFAULTS = {
   babelsberg: {
     settings: { "footer": "UFA · Studio Five · Potsdam-Babelsberg", "location": { "name": "Potsdam", "lat": 52.3906, "lon": 13.1172 } },
     stops: [
-      { "id": "900230003", "name": "S Griebnitzsee", "short": "S7 · Griebnitzsee", "products": ["suburban","bus"], "rows": 4, "walk": "10 min", "on": true },
-      { "id": "900230002", "name": "Medienstadt Babelsberg", "short": "S7 · Medienstadt Babelsberg", "products": ["suburban"], "rows": 3, "walk": "12 min", "on": true }
+      { "id": "900230003", "name": "S Griebnitzsee", "short": "S7 · Griebnitzsee", "products": ["suburban", "regional", "bus"], "rows": 4, "walk": "10 min", "on": true },
+      { "id": "900230001", "name": "Medienstadt Babelsberg Bhf", "short": "Bahn · Medienstadt Babelsberg", "products": ["regional", "bus"], "rows": 3, "walk": "", "on": true }
     ],
     wifi: { "ssid": "UFA-Guest-Potsdam", "pass": "Testdaten-2026", "enc": "WPA", "title": "Willkommen|im Netz", "steps": ["Bitte melden Sie sich *am Empfang* an.", "Kamera auf den Code richten – *Gäste-WLAN* verbindet sich automatisch.", "Ihre Gastgeberin oder Ihr Gastgeber holt Sie hier ab."], "show": true, "mini": true, "showPass": false }
   }
