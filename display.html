@@ -485,6 +485,34 @@ var PRIV=!!(typeof CONFIG!=='undefined' && CONFIG.privateData && CONFIG.github &
 var GHC=PRIV?CONFIG.github:null;
 var READ_TOKEN=''; try{ READ_TOKEN=localStorage.getItem('ufa_read_token')||localStorage.getItem('ufa_gh_token')||''; }catch(e){} // im Browser der Verwaltung reicht deren Token (Vorschau)
 (function(){ var m=location.search.match(/[?&]token=([A-Za-z0-9_]+)/); if(m){ READ_TOKEN=m[1]; try{ localStorage.setItem('ufa_read_token',READ_TOKEN); }catch(e){} try{ history.replaceState(null,'',location.pathname+location.search.replace(/([?&])token=[^&]*&?/,'$1').replace(/[?&]$/,'')+location.hash); }catch(e){} } })();
+/* Einrichtungscode: kurzer Code statt des langen Lese-Tokens. Der Token liegt verschlüsselt in setup.json (öffentlich, ohne Code wertlos);
+   der Monitor entschlüsselt ihn mit dem Code und merkt sich beides. Läuft der Token ab, holt sich der Monitor den neuen selbst. */
+var SETUP_CODE=''; try{ SETUP_CODE=localStorage.getItem('ufa_setup_code')||''; }catch(e){}
+function normCode(v){ return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function b64bytes(b){ var s=atob(b), u=new Uint8Array(s.length); for(var i=0;i<s.length;i++) u[i]=s.charCodeAt(i); return u; }
+function tokenFromCode(code){
+  code=normCode(code);
+  if(!code || !window.crypto || !crypto.subtle) return Promise.reject(new Error('nocrypto'));
+  return fetch('setup.json?t='+Date.now(), {cache:'no-store'}).then(function(r){ if(!r.ok) throw new Error('nosetup'); return r.json(); }).then(function(j){
+    return crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']).then(function(k){
+      return crypto.subtle.deriveKey({name:'PBKDF2', salt:b64bytes(j.salt), iterations:j.iter||200000, hash:'SHA-256'}, k, {name:'AES-GCM', length:256}, false, ['decrypt']);
+    }).then(function(key){ return crypto.subtle.decrypt({name:'AES-GCM', iv:b64bytes(j.iv)}, key, b64bytes(j.ct)); })
+      .then(function(buf){ return new TextDecoder().decode(buf); }, function(){ throw new Error('badcode'); });
+  });
+}
+var URL_CODE=(function(){ var m=location.search.match(/[?&]code=([A-Za-z0-9-]+)/); if(!m) return ''; try{ history.replaceState(null,'',location.pathname+location.search.replace(/([?&])code=[^&]*&?/,'$1').replace(/[?&]$/,'')+location.hash); }catch(e){} return normCode(m[1]); })();
+var lastAutoSetup=0;
+// Token abgelaufen oder noch keiner da, aber ein Code ist bekannt: neuen Token selbst holen (höchstens alle 5 Minuten)
+function autoSetup(){
+  var code=URL_CODE||SETUP_CODE; if(!code || Date.now()-lastAutoSetup<300000) return Promise.resolve(false);
+  lastAutoSetup=Date.now();
+  return tokenFromCode(code).then(function(tok){
+    if(!tok || tok===READ_TOKEN) return false;
+    READ_TOKEN=tok; SETUP_CODE=code; URL_CODE='';
+    try{ localStorage.setItem('ufa_read_token',tok); localStorage.setItem('ufa_setup_code',code); }catch(e){}
+    return true;
+  }).catch(function(){ return false; });
+}
 function ghRawUrl(path){ return 'https://api.github.com/repos/'+GHC.owner+'/'+GHC.repo+'/contents/'+path+'?ref='+(GHC.branch||'main'); }
 function ghHeadersR(){ return {'Authorization':'Bearer '+READ_TOKEN,'Accept':'application/vnd.github.raw+json','X-GitHub-Api-Version':'2022-11-28'}; }
 var authBad=false;
@@ -507,16 +535,28 @@ function showSetup(msg){
   // Maske steht schon: nur den Hinweis aktualisieren, die Eingabe NICHT löschen (Abruf läuft jede Minute erneut)
   if($('tokin') && el.style.display!=='none'){ var mm=$('setupmsg'); if(mm) mm.textContent=msg; el.style.display='flex'; return; }
   el.innerHTML='<div style="max-width:1100px;padding:60px;text-align:center"><div class="label" style="margin-bottom:20px">Einrichtung</div><h1 style="font-size:76px;margin-bottom:26px">Zugriff auf die Inhalte</h1><p id="setupmsg" style="font-size:28px;color:var(--tx2);line-height:1.4">'+esc(msg)+'</p>'
-    +'<p style="font-size:24px;color:var(--tx3);margin-top:24px;line-height:1.5">Lese-Token eingeben – einmalig, er bleibt auf diesem Gerät. Der Anfang <b style="color:#fff">github_pat_</b> kann weggelassen werden.</p>'
-    +'<div style="margin-top:34px;display:flex;gap:16px;justify-content:center"><input id="tokin" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="github_pat_…" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:26px;letter-spacing:.04em;padding:16px 20px;border-radius:14px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.08);color:#fff;width:820px"><button id="tokok" style="font:inherit;font-size:30px;font-weight:600;padding:16px 34px;border-radius:14px;border:0;background:#fff;color:#000">Prüfen</button></div>'
+    +'<p style="font-size:24px;color:var(--tx3);margin-top:24px;line-height:1.5">Bitte den <b style="color:#fff">Einrichtungscode</b> eingeben (12 Zeichen, steht in der Verwaltung unter Einstellungen). Einmalig – er bleibt auf diesem Gerät.</p>'
+    +'<div style="margin-top:34px;display:flex;gap:16px;justify-content:center"><input id="tokin" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="z. B. kafu-mer7-tulg" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:26px;letter-spacing:.04em;padding:16px 20px;border-radius:14px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.08);color:#fff;width:820px"><button id="tokok" style="font:inherit;font-size:30px;font-weight:600;padding:16px 34px;border-radius:14px;border:0;background:#fff;color:#000">Prüfen</button></div>'
     +'<p id="tokinfo" style="font-size:24px;color:var(--tx3);margin-top:20px;min-height:34px"></p></div>';
   el.style.display='flex'; document.body.style.cursor='auto';
   var inp=$('tokin'), info=$('tokinfo');
+  function isCode(v){ v=String(v||'').replace(/\s+/g,''); return !/^github_pat_|^gh[pousr]_/i.test(v) && normCode(v).length<=24; }
   function norm(v){ v=String(v||'').replace(/\s+/g,''); if(v && !/^github_pat_/i.test(v) && !/^gh[pousr]_/.test(v)) v='github_pat_'+v; return v; }
-  inp.oninput=function(){ var v=norm(inp.value); info.style.color='var(--tx3)'; info.textContent=v? (v.length+' Zeichen'+(v.length===93?' – Länge passt':' (ein Lese-Token hat 93)')) : ''; };
+  inp.oninput=function(){ var raw=inp.value; info.style.color='var(--tx3)';
+    if(isCode(raw)){ var n=normCode(raw).length; info.textContent=n? (n+' von 12 Zeichen'+(n===12?' – Länge passt':'')) : ''; }
+    else { var v=norm(raw); info.textContent=v.length+' Zeichen'+(v.length===93?' – Länge passt':' (ein Lese-Token hat 93)'); } };
   function tryTok(){
-    var v=norm(inp.value); if(!v) return;
+    var raw=inp.value; if(!raw.trim()) return;
     info.style.color='var(--tx2)'; info.textContent='Wird geprüft …';
+    if(isCode(raw)){
+      var code=normCode(raw);
+      tokenFromCode(code).then(function(tok){ SETUP_CODE=code; try{ localStorage.setItem('ufa_setup_code',code); }catch(e){} checkTok(tok); })
+        .catch(function(e){ info.style.color='#ff8a7a'; info.textContent = e.message==='badcode' ? 'Der Code stimmt nicht. Bitte die Zeichen prüfen.' : (e.message==='nosetup' ? 'Für diese Anlage ist noch kein Einrichtungscode hinterlegt (Verwaltung → Einstellungen).' : 'Der Code konnte nicht geprüft werden. WLAN prüfen und noch einmal versuchen.'); });
+      return;
+    }
+    checkTok(norm(raw));
+  }
+  function checkTok(v){
     var old=READ_TOKEN; READ_TOKEN=v;
     fetch(ghRawUrl(DATA_FILE)+'&t='+Date.now(), {headers:ghHeadersR(), cache:'no-store'}).then(function(r){
       if(r.status===401||r.status===403||r.status===404){ READ_TOKEN=old; info.style.color='#ff8a7a'; info.textContent='Nicht angenommen ('+r.status+'). Bitte die Zeichen prüfen – y/z, 0/O, 1/l/I, Groß- und Kleinschreibung.'; return; }
@@ -604,8 +644,9 @@ function loadData(i){
   if(LOCAL){ loadLocalData(); return; }
   if(DEMO){ if(!state.data){ state.data=siteDefault(); render(); } return; }
   if(PRIV){
-    if(!READ_TOKEN){ if(!state.data){ var c0=null; try{ c0=JSON.parse(localStorage.getItem(CACHE_KEY)||'null'); }catch(e){} if(c0){ state.data=c0; render(); } } showSetup('Dieser Monitor hat noch keinen Zugriff auf den privaten Datenspeicher.'); return; }
-    fetchPrivJSON(DATA_FILE).then(applyData).catch(function(e){ if(authBad){ showSetup('Der Lese-Token wurde nicht angenommen (abgelaufen oder widerrufen). Bitte in GitHub einen neuen Token erstellen und hier eintragen.'); }
+    if(!READ_TOKEN || URL_CODE){ if(!state.data){ var c0=null; try{ c0=JSON.parse(localStorage.getItem(CACHE_KEY)||'null'); }catch(e){} if(c0){ state.data=c0; render(); } }
+      autoSetup().then(function(ok){ if(ok || READ_TOKEN){ URL_CODE=''; loadData(0); loadTickerNews(); } else showSetup('Dieser Monitor hat noch keinen Zugriff auf den privaten Datenspeicher.'); }); return; }
+    fetchPrivJSON(DATA_FILE).then(applyData).catch(function(e){ if(authBad){ autoSetup().then(function(ok){ if(ok){ var su=$('setup'); if(su) su.style.display='none'; loadData(0); loadTickerNews(); } }); showSetup('Der Lese-Token wurde nicht angenommen (abgelaufen oder widerrufen). Bitte in GitHub einen neuen Token erstellen und hier eintragen.'); }
       if(!state.data){ var c=null; try{ c=JSON.parse(localStorage.getItem(CACHE_KEY)||'null'); }catch(e2){} state.data=c||DEFAULT_DATA; render(); } $('offline').classList.add('on'); });
     return;
   }

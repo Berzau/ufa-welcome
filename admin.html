@@ -615,6 +615,15 @@ input.bad,select.bad,textarea.bad{border-color:var(--red);background:#FFF7F8}
     </div>
     <div class="row"><button class="btn pri" onclick="saveGH()">Verbindung speichern & testen</button><button class="btn" onclick="forgetGH()">Token aus diesem Browser entfernen</button></div>
   </div>
+  <div class="card" id="setupCard"><h3>Neuen Monitor einrichten</h3>
+    <p class="hint">Damit am Monitor nicht der lange Lese-Token eingetippt werden muss: Hier einmal den Lese-Token hinterlegen, dann genügt am Monitor ein kurzer Einrichtungscode. Der Token wird verschlüsselt abgelegt und ist ohne den Code nicht lesbar. Den Code nur an Personen geben, die Monitore aufstellen.</p>
+    <div class="grid" style="margin-top:12px">
+      <div><label>Lese-Token der Monitore (Contents: Read-only)</label><input id="su_tok" type="password" placeholder="github_pat_…" autocomplete="off"></div>
+      <div><label>Einrichtungscode (12 Zeichen)</label><input id="su_code" autocomplete="off" spellcheck="false" style="font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.06em"></div>
+    </div>
+    <div class="row"><button class="btn pri" type="button" onclick="makeSetup()">Einrichtungscode hinterlegen</button><button class="btn" type="button" onclick="newSetupCode()">Neuen Code würfeln</button></div>
+    <div id="su_out" class="hint" style="margin-top:12px"></div>
+  </div>
   <div class="card"><h3>Sicherung</h3><p class="hint">Alle Inhalte als Datei sichern oder eine Sicherung wiederherstellen.</p>
     <div class="row"><button class="btn" onclick="exportJSON()">Sicherung herunterladen</button><label class="btn" style="margin:0">Sicherung einspielen <input type="file" accept="application/json" style="display:none" onchange="importJSON(this)"></label></div>
   </div>
@@ -639,7 +648,7 @@ input.bad,select.bad,textarea.bad{border-color:var(--red);background:#FFF7F8}
   <div class="ft" id="ck_ft"></div>
 </div></div>
 <div class="sheet mon" id="monv" role="dialog" aria-modal="true" aria-label="Monitor"><div class="box">
-  <div class="hd"><button class="x" type="button" onclick="closeMon()">‹ Zurück</button><b style="text-align:center">Monitor</b><div class="mvseg" id="mv_seg"><button class="on" data-m="1">1</button><button data-m="2">2</button><button data-m="3">3</button></div></div>
+  <div class="hd"><button class="x" type="button" onclick="closeMon()">‹ Zurück</button><b style="text-align:center">Monitor</b><div class="mvseg" id="mv_fmt" aria-label="Format"><button type="button" data-f="hoch">Hoch</button><button type="button" data-f="quer">Quer</button></div><div class="mvseg" id="mv_seg"><button class="on" data-m="1">1</button><button data-m="2">2</button><button data-m="3">3</button></div></div>
   <div class="mvbody" id="mv_body"><div class="mvframe" id="mv_frame"><iframe id="mv_if" title="Monitor"></iframe></div></div>
   <div class="chips" id="mv_chips"></div>
   <div class="mvnote" id="mv_note"></div>
@@ -740,6 +749,40 @@ function save(msg, retry){
 // Rückmeldung an das Kontrollblatt (falls offen). Gibt true zurück, wenn die Kontrolle die Meldung übernimmt.
 var saveCb=null;
 function saved(ok,info){ var cb=saveCb; saveCb=null; if(cb){ cb(ok,info); return true; } return false; }
+/* ---------- Monitor einrichten: Lese-Token verschlüsselt als setup.json ins Code-Repository ---------- */
+var SU_ALPHA='abcdefghkmnpqrstuvwx23456789'; // ohne l/i/o/0/1 und ohne y/z (am Monitor oft englische Tastatur)
+function newSetupCode(){ var u=new Uint8Array(12),c=''; crypto.getRandomValues(u); for(var i=0;i<12;i++){ c+=SU_ALPHA[u[i]%SU_ALPHA.length]; if(i===3||i===7)c+='-'; } $('su_code').value=c; return c; }
+function suNorm(v){ return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function suB64(buf){ var u=new Uint8Array(buf),t=''; for(var i=0;i<u.length;i++)t+=String.fromCharCode(u[i]); return btoa(t); }
+function codeRepo(){ var c=(typeof CONFIG!=='undefined'&&CONFIG.codeRepo)||null; if(c&&c.owner&&c.repo) return c; var m=location.hostname.match(/^([\w-]+)\.github\.io$/), seg=location.pathname.split('/').filter(Boolean)[0]; if(m&&seg&&!/\.html$/.test(seg)) return {owner:m[1],repo:seg,branch:'main'}; return null; }
+function suAddr(code){ var base=location.origin+location.pathname.replace(/[^\/]*$/,''); return SITES.map(function(x){ return '<div style="margin-top:6px"><b>'+esc(x.name)+':</b> <code style="user-select:all">'+esc(base.replace(/^https?:\/\//,'')+'display.html?site='+x.id)+'</code></div>'; }).join(''); }
+function makeSetup(){
+  var out=$('su_out'), tok=$('su_tok').value.trim(), code=suNorm($('su_code').value);
+  function msg(h,bad){ out.innerHTML=h; out.style.color=bad?'#b3261e':''; }
+  if(!/^github_pat_\w{20,}$|^gh[pousr]_\w{20,}$/.test(tok)){ msg('Bitte den Lese-Token der Monitore einfügen (beginnt mit github_pat_).',1); return; }
+  if(code.length<10){ msg('Der Einrichtungscode braucht mindestens 10 Zeichen.',1); return; }
+  var g=ghCfg(); if(!g){ msg('Zuerst oben die Verbindung zu GitHub einrichten.',1); return; }
+  msg('Lese-Token wird geprüft …');
+  fetch('https://api.github.com/repos/'+g.owner+'/'+g.repo+'/contents/'+DATA_FILE+'?ref='+g.branch,{headers:{'Authorization':'Bearer '+tok,'Accept':'application/vnd.github.raw+json'},cache:'no-store'}).then(function(r){
+    if(!r.ok) throw new Error('Der Lese-Token wurde von GitHub nicht angenommen ('+r.status+').');
+    var salt=crypto.getRandomValues(new Uint8Array(16)), iv=crypto.getRandomValues(new Uint8Array(12)), iter=200000;
+    return crypto.subtle.importKey('raw',new TextEncoder().encode(code),'PBKDF2',false,['deriveKey'])
+      .then(function(k){ return crypto.subtle.deriveKey({name:'PBKDF2',salt:salt,iterations:iter,hash:'SHA-256'},k,{name:'AES-GCM',length:256},false,['encrypt']); })
+      .then(function(key){ return crypto.subtle.encrypt({name:'AES-GCM',iv:iv},key,new TextEncoder().encode(tok)); })
+      .then(function(ct){ return JSON.stringify({v:1,iter:iter,salt:suB64(salt),iv:suB64(iv),ct:suB64(ct),made:new Date().toISOString().slice(0,10)},null,1); });
+  }).then(function(json){
+    var c=codeRepo(), pretty=code.replace(/(.{4})(?=.)/g,'$1-');
+    var done=function(auto){ $('su_tok').value=''; msg('<b>Fertig.</b> Einrichtungscode: <code style="font-size:16px;user-select:all">'+esc(pretty)+'</code>'+(auto?' – in etwa zwei Minuten nutzbar.':'')+'<div style="margin-top:8px">Am neuen Monitor im Browser diese Adresse öffnen und den Code eingeben:</div>'+suAddr(code)+'<div style="margin-top:8px">Den Code notieren – er wird hier nicht gespeichert. Läuft der Lese-Token ab: neuen Token mit <i>demselben</i> Code hier hinterlegen, die Monitore holen ihn sich dann von selbst.</div>'); };
+    var manual=function(why){ msg(esc(why)+' Der Schreib-Token dieser Verwaltung darf nur die Inhalte ändern, nicht die Programmdateien. Entweder den Token in GitHub um das Repository <b>'+esc(c?c.repo:'(Code)')+'</b> erweitern (Contents: Read and write) und noch einmal klicken – oder diesen Text als Datei <b>setup.json</b> neben display.html ablegen:<textarea readonly id="su_json" style="width:100%;height:120px;margin-top:8px;font-family:ui-monospace,Menlo,monospace;font-size:12px">'+esc(json)+'</textarea><div style="margin-top:8px">Einrichtungscode: <code style="font-size:16px;user-select:all">'+esc(pretty)+'</code></div>',1); out.style.color=''; $('su_tok').value=''; };
+    if(!c || !ghToken()){ manual('Automatisches Ablegen ist hier nicht möglich.'); return; }
+    var url='https://api.github.com/repos/'+c.owner+'/'+c.repo+'/contents/setup.json';
+    msg('Wird abgelegt …');
+    return fetch(url+'?ref='+(c.branch||'main')+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){ return r.ok?r.json():null; }).then(function(cur){
+      var body={message:'Einrichtungscode für Monitore',content:b64enc(json),branch:c.branch||'main'}; if(cur&&cur.sha) body.sha=cur.sha;
+      return fetch(url,{method:'PUT',headers:ghHeaders(),body:JSON.stringify(body)});
+    }).then(function(r){ if(r.ok) done(true); else manual('Ablegen nicht erlaubt ('+r.status+').'); });
+  }).catch(function(e){ msg(esc(e.message||String(e)),1); });
+}
 function saveGH(){ var c={owner:$('gh_owner').value.trim(),repo:$('gh_repo').value.trim(),branch:$('gh_branch').value.trim()||'main',path:'data.json'}; if(!c.owner||!c.repo){alert('Organisation und Repository angeben.');return} localStorage.setItem('ufa_gh',JSON.stringify(c)); var t=$('gh_token').value.trim(); if(t) localStorage.setItem('ufa_gh_token',t); $('gh_token').value=''; load() }
 function forgetGH(){ localStorage.removeItem('ufa_gh_token'); toast('Token entfernt'); load() }
 function exportJSON(){var a=document.createElement('a');a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(D,null,2));a.download='ufa-welcome-sicherung-'+today()+'.json';a.click()}
@@ -1016,7 +1059,7 @@ function renderStops(){ var box=$('st_list'); if(!box) return; box.innerHTML='';
 function toggleProd(i,p,on){ var s=D.stops[i]; s.products=(s.products||[]).filter(function(x){ return x!==p; }); if(on) s.products.push(p); }
 /* Einstellungen */
 var ROT=[['welcome','Willkommen'],['guests','Gäste'],['notices','Hinweise'],['transit','Verkehr'],['weather','Wetter'],['menu','Speiseplan'],['tv','Heute im TV'],['media','Showreel'],['wifi','Gäste-WLAN']];
-function renderSettings(){renderStops();var c=ghCfg()||{};$('gh_owner').value=c.owner||'';$('gh_repo').value=c.repo||'';$('gh_branch').value=c.branch||'main';$('gh_token').placeholder=ghToken()?'Token ist hinterlegt':'github_pat_…';var s=D.settings||{};$('s_title').value=s.welcomeTitle||'';$('s_claim').value=s.welcomeClaim||'';$('s_gintro').value=s.guestIntro||'';$('s_footer').value=s.footer||'';var lo=s.location||{};$('s_locname').value=lo.name||'';$('s_lat').value=lo.lat||'';$('s_lon').value=lo.lon||'';var g=s.greetings||{};$('s_morning').value=g.morning||'';$('s_noon').value=g.noon||'';$('s_afternoon').value=g.afternoon||'';$('s_evening').value=g.evening||'';
+function renderSettings(){renderStops();if($('su_code')&&!$('su_code').value)newSetupCode();var c=ghCfg()||{};$('gh_owner').value=c.owner||'';$('gh_repo').value=c.repo||'';$('gh_branch').value=c.branch||'main';$('gh_token').placeholder=ghToken()?'Token ist hinterlegt':'github_pat_…';var s=D.settings||{};$('s_title').value=s.welcomeTitle||'';$('s_claim').value=s.welcomeClaim||'';$('s_gintro').value=s.guestIntro||'';$('s_footer').value=s.footer||'';var lo=s.location||{};$('s_locname').value=lo.name||'';$('s_lat').value=lo.lat||'';$('s_lon').value=lo.lon||'';var g=s.greetings||{};$('s_morning').value=g.morning||'';$('s_noon').value=g.noon||'';$('s_afternoon').value=g.afternoon||'';$('s_evening').value=g.evening||'';
   var r=$('s_rot');r.innerHTML='';ROT.forEach(function(x){r.innerHTML+='<div><label>'+x[1]+'</label><input type="number" min="5" max="120" id="rot_'+x[0]+'" value="'+((s.rotation||{})[x[0]]||15)+'"></div>'});
   $('s_menuUntil').value=s.menuUntilHour==null?15:s.menuUntilHour;$('s_nightFrom').value=s.nightFrom==null?22:s.nightFrom;$('s_nightTo').value=s.nightTo==null?6:s.nightTo;$('s_nightScene').value=s.nightScene===false?'0':'1';$('s_jump').value=s.jumpToNew?'1':'0';$('s_permon').value=s.perMonitor?'1':'0';$('s_text').value=s.textSize==='big'?'big':'normal';$('s_awake').value=s.keepAwake?'1':'0';try{$('s_user').value=localStorage.getItem('ufa_user')||''}catch(e){}}
 function saveSettings(){var s=D.settings=D.settings||{};s.welcomeTitle=$('s_title').value;s.welcomeClaim=$('s_claim').value;s.guestIntro=$('s_gintro').value;s.guestIntroOne=$('s_gintro').value;s.footer=$('s_footer').value;s.location={name:$('s_locname').value.trim()||'Berlin',lat:parseFloat($('s_lat').value)||52.505732,lon:parseFloat($('s_lon').value)||13.364533};s.greetings={morning:$('s_morning').value,noon:$('s_noon').value,afternoon:$('s_afternoon').value,evening:$('s_evening').value,night:'Gute Nacht'};
@@ -1171,7 +1214,8 @@ function pollArrival(stamp){var n=0;(function tick(){var el=$('ck_arrive');
 
 /* ---------- Monitor ansehen ---------- */
 var mvTimer=null,mvMon=1,mvWant=null;
-function mvSrc(){return 'display.html?m='+(perMon()?mvMon:1)+'&format=hoch'+(mode==='local'?'&src=local':'')+SITEQ}
+var mvFmt='hoch';try{if(localStorage.getItem('ufa_mvfmt')==='quer')mvFmt='quer'}catch(e){}
+function mvSrc(){return 'display.html?m='+(perMon()?mvMon:1)+'&format='+mvFmt+(mode==='local'?'&src=local':'')+SITEQ}
 function openMon(scene){
   if(EMBED){try{if(parent.UFA_show&&parent.UFA_show(scene||null))return}catch(e){}}
   var f=$('mv_if');mvWant=scene||null;
@@ -1184,13 +1228,16 @@ function closeMon(){$('monv').classList.remove('on');document.body.style.overflo
 function mvWin(){try{return $('mv_if').contentWindow}catch(e){return null}}
 function mvJump(){var w=mvWin();if(mvWant&&w&&w.ufaShow){w.ufaShow(mvWant);mvWant=null;mvChips()}}
 $('mv_if').addEventListener('load',function(){setTimeout(mvJump,700)});
-function fitMon(){var b=$('mv_body').getBoundingClientRect(),h=b.height-28,w=h*9/16;if(w>b.width-28){w=b.width-28;h=w*16/9}var f=$('mv_frame');f.style.width=Math.max(0,Math.floor(w))+'px';f.style.height=Math.max(0,Math.floor(h))+'px'}
+function fitMon(){var q=mvFmt==='quer',r=q?16/9:9/16,b=$('mv_body').getBoundingClientRect(),h=b.height-28,w=h*r;if(w>b.width-28){w=b.width-28;h=w/r}var f=$('mv_frame');f.style.width=Math.max(0,Math.floor(w))+'px';f.style.height=Math.max(0,Math.floor(h))+'px'}
 window.addEventListener('resize',function(){if($('monv').classList.contains('on'))fitMon()});
 function mvChips(){var w=mvWin(),st=null;try{st=w&&w.ufaState&&w.ufaState()}catch(e){}if(!st)return;
   var ids=st.order.slice(),ex=st.extra||[];ids=ids.concat(ex.filter(function(x){return ids.indexOf(x)<0}));var key=ids.join(',')+'|'+st.current+'|'+st.flash,box=$('mv_chips');if(box.dataset.k===key)return;box.dataset.k=key;box.innerHTML='';
   if(st.flash){var fb=document.createElement('button');fb.type='button';fb.className='fl';fb.textContent='Sofortmeldung';fb.onclick=function(){w.ufaShow('flash')};box.appendChild(fb)}
   ids.forEach(function(id){var b=document.createElement('button');b.type='button';b.textContent=SCN[id]||id;b.className=(id===st.current?'on':'')+(st.order.indexOf(id)<0?' off':'');if(st.order.indexOf(id)<0)b.title='Gerade nicht im Ablauf';b.onclick=function(){w.ufaShow(id);setTimeout(mvChips,50)};box.appendChild(b)});
   var on=box.querySelector('.on');if(on&&on.scrollIntoView)try{on.scrollIntoView({inline:'center',block:'nearest'})}catch(e){}}
+function mvFmtUI(){document.querySelectorAll('#mv_fmt button').forEach(function(x){x.classList.toggle('on',x.dataset.f===mvFmt)})}
+mvFmtUI();
+document.querySelectorAll('#mv_fmt button').forEach(function(b){b.onclick=function(){mvFmt=b.dataset.f;try{localStorage.setItem('ufa_mvfmt',mvFmt)}catch(e){}mvFmtUI();fitMon();$('mv_if').setAttribute('src',mvSrc());$('mv_chips').dataset.k=''}});
 document.querySelectorAll('#mv_seg button').forEach(function(b){b.onclick=function(){mvMon=parseInt(b.dataset.m,10);document.querySelectorAll('#mv_seg button').forEach(function(x){x.classList.toggle('on',x===b)});$('mv_if').setAttribute('src',mvSrc());$('mv_chips').dataset.k=''}});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'){if($('monv').classList.contains('on'))closeMon();else if($('chk').classList.contains('on'))closeCheck()}});
 function resetDemo(){try{SITES.forEach(function(s){localStorage.removeItem('ufa_display_cache'+(s.id&&s.id!=='default'?'_'+s.id:''))});localStorage.removeItem('ufa_display_cache');localStorage.removeItem('ufa_preview')}catch(e){}if(EMBED){try{if(parent.UFA_reset){parent.UFA_reset();return}}catch(e){}}location.reload()}
