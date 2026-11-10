@@ -635,6 +635,8 @@ function fetchJSON(url, ms){
 /* ============ Daten ============ */
 function applyData(d){
   if(!d || !d.settings) throw new Error('leer');
+  // „Monitore neu laden“ aus der Verwaltung: nur echte Abrufe vergleichen; auch der erste Klick zählt (leer → gesetzt)
+  var rtNow=(d.settings&&d.settings.reloadToken)||''; if(window.__rtSeen && rtNow && rtNow!==window.__rt){ window.__rt=rtNow; try{ localStorage.setItem(CACHE_KEY, JSON.stringify(d)); }catch(e){} location.reload(); return; } window.__rt=rtNow; window.__rtSeen=true;
   state.data = d; state.dataTs = Date.now();
   try{ localStorage.setItem(CACHE_KEY, JSON.stringify(d)); }catch(e){}
   $('offline').classList.remove('on');
@@ -715,7 +717,6 @@ function render(){
   $('site').textContent = s.footer || 'UFA · Schöneberger Ufer 69';
   $('logoNight').src = LOGOS.ufa;
   applyText(); applyAwake(); renderWelcome(d); renderGuests(d); renderNotices(d); renderMenu(d); renderWeather(); renderTransit(); renderWifi(d); renderTV(d); renderRooms(d); renderAlert(d); renderDiag(); checkFlash(); renderTicker();
-  if(d.settings && d.settings.reloadToken && d.settings.reloadToken!==(window.__rt||d.settings.reloadToken)){ location.reload(); } window.__rt=d.settings?d.settings.reloadToken:'';
   buildOrder(d);
   if(current && state.order.length && !state.order.some(function(x){ return x.id===current; })){ clearTimeout(sceneTimer); state.scene=0; showScene(); }
   handleFocus(d);
