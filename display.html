@@ -503,11 +503,31 @@ function privFile(path, cb){
 }
 function showSetup(msg){
   var el=$('setup'); if(!el){ el=document.createElement('div'); el.id='setup'; el.style.cssText='position:absolute;inset:0;z-index:30;background:rgba(5,6,7,.96);display:flex;align-items:center;justify-content:center;font-family:var(--tf)'; $('stage').appendChild(el); }
-  el.innerHTML='<div style="max-width:900px;padding:60px;text-align:center"><div class="label" style="margin-bottom:20px">Einrichtung</div><h1 style="font-size:84px;margin-bottom:30px">Zugriff auf die Inhalte</h1><p style="font-size:30px;color:var(--tx2);line-height:1.4">'+esc(msg)+'</p>'
-    +'<p style="font-size:26px;color:var(--tx3);margin-top:30px;line-height:1.5">Lese-Token eingeben (einmalig, bleibt auf diesem Gerät) oder die Adresse mit <b style="color:#fff">?token=…</b> aufrufen.</p>'
-    +'<div style="margin-top:40px;display:flex;gap:16px;justify-content:center"><input id="tokin" type="password" placeholder="github_pat_…" style="font:inherit;font-size:30px;padding:16px 20px;border-radius:14px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.08);color:#fff;width:520px"><button id="tokok" style="font:inherit;font-size:30px;font-weight:600;padding:16px 34px;border-radius:14px;border:0;background:#fff;color:#000">Speichern</button></div></div>';
+  // Maske steht schon: nur den Hinweis aktualisieren, die Eingabe NICHT löschen (Abruf läuft jede Minute erneut)
+  if($('tokin') && el.style.display!=='none'){ var mm=$('setupmsg'); if(mm) mm.textContent=msg; el.style.display='flex'; return; }
+  el.innerHTML='<div style="max-width:1100px;padding:60px;text-align:center"><div class="label" style="margin-bottom:20px">Einrichtung</div><h1 style="font-size:76px;margin-bottom:26px">Zugriff auf die Inhalte</h1><p id="setupmsg" style="font-size:28px;color:var(--tx2);line-height:1.4">'+esc(msg)+'</p>'
+    +'<p style="font-size:24px;color:var(--tx3);margin-top:24px;line-height:1.5">Lese-Token eingeben – einmalig, er bleibt auf diesem Gerät. Der Anfang <b style="color:#fff">github_pat_</b> kann weggelassen werden.</p>'
+    +'<div style="margin-top:34px;display:flex;gap:16px;justify-content:center"><input id="tokin" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="github_pat_…" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:26px;letter-spacing:.04em;padding:16px 20px;border-radius:14px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.08);color:#fff;width:820px"><button id="tokok" style="font:inherit;font-size:30px;font-weight:600;padding:16px 34px;border-radius:14px;border:0;background:#fff;color:#000">Prüfen</button></div>'
+    +'<p id="tokinfo" style="font-size:24px;color:var(--tx3);margin-top:20px;min-height:34px"></p></div>';
   el.style.display='flex'; document.body.style.cursor='auto';
-  $('tokok').onclick=function(){ var v=$('tokin').value.trim(); if(!v) return; READ_TOKEN=v; try{ localStorage.setItem('ufa_read_token',v); }catch(e){} el.style.display='none'; loadData(0); loadTickerNews(); };
+  var inp=$('tokin'), info=$('tokinfo');
+  function norm(v){ v=String(v||'').replace(/\s+/g,''); if(v && !/^github_pat_/i.test(v) && !/^gh[pousr]_/.test(v)) v='github_pat_'+v; return v; }
+  inp.oninput=function(){ var v=norm(inp.value); info.style.color='var(--tx3)'; info.textContent=v? (v.length+' Zeichen'+(v.length===93?' – Länge passt':' (ein Lese-Token hat 93)')) : ''; };
+  function tryTok(){
+    var v=norm(inp.value); if(!v) return;
+    info.style.color='var(--tx2)'; info.textContent='Wird geprüft …';
+    var old=READ_TOKEN; READ_TOKEN=v;
+    fetch(ghRawUrl(DATA_FILE)+'&t='+Date.now(), {headers:ghHeadersR(), cache:'no-store'}).then(function(r){
+      if(r.status===401||r.status===403||r.status===404){ READ_TOKEN=old; info.style.color='#ff8a7a'; info.textContent='Nicht angenommen ('+r.status+'). Bitte die Zeichen prüfen – y/z, 0/O, 1/l/I, Groß- und Kleinschreibung.'; return; }
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      try{ localStorage.setItem('ufa_read_token',v); }catch(e){}
+      info.style.color='#7be0a0'; info.textContent='Passt. Die Anzeige startet …';
+      setTimeout(function(){ el.style.display='none'; authBad=false; loadData(0); loadTickerNews(); }, 800);
+    }).catch(function(e){ READ_TOKEN=old; info.style.color='#ff8a7a'; info.textContent='Keine Verbindung zu GitHub ('+(e.message||e)+'). WLAN prüfen und noch einmal versuchen.'; });
+  }
+  $('tokok').onclick=tryTok;
+  inp.onkeydown=function(e){ if(e.key==='Enter'||e.keyCode===13){ e.preventDefault(); tryTok(); } };
+  try{ inp.focus(); }catch(e){}
 }
 // Gerätetest: ?test=1 blendet eine Diagnose ein (Laufzeit, Abrufe, Fehler, Gerät) – für den Testtag am Monitor
 var TESTMODE=/[?&]test=1/.test(location.search);
