@@ -132,6 +132,7 @@ body.big.portrait .note .b{font-size:34px} body.big.portrait .dep{font-size:34px
 .dep .dir{font-weight:300;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:20px}
 .dep .min{text-align:right;font-weight:500}
 .dep .min.late{color:#F2B84B}
+.dep.faint{display:block;line-height:66px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dep .min s{color:var(--red);text-decoration:line-through;font-weight:300}
 .dep .min small{font-size:19px;color:var(--tx3);font-weight:400;margin-left:8px}
 
@@ -570,6 +571,15 @@ function applyData(d){
   try{ localStorage.setItem(CACHE_KEY, JSON.stringify(d)); }catch(e){}
   $('offline').classList.remove('on');
   render();
+  geoCheck();
+}
+// Haltestellen oder Wetterort haben sich geändert (z. B. erster Abruf der Standortdaten): sofort neu laden, nicht erst beim nächsten Takt
+var geoKey=null;
+function geoCheck(){
+  var d=state.data||{}, l=(d.settings&&d.settings.location)||{};
+  var k=JSON.stringify([(d.stops||[]).map(function(s){ return [s.id,s.on!==false,(s.products||[]).join()]; }), l.lat, l.lon]);
+  if(k===geoKey) return; var first=(geoKey===null); geoKey=k;
+  setTimeout(function(){ try{ loadTransit(); loadWeather(); }catch(e){} }, first?600:50);
 }
 var lastLocal='';
 function siteDefault(){ var d=JSON.parse(JSON.stringify(DEFAULT_DATA)); var sd=(typeof SITE_DEFAULTS!=='undefined')&&SITE_DEFAULTS[SITE.id]; if(sd){ Object.keys(sd).forEach(function(k){ if(k==='settings'){ Object.keys(sd.settings).forEach(function(j){ d.settings[j]=sd.settings[j]; }); } else d[k]=sd[k]; }); } return d; }
